@@ -2,6 +2,7 @@ import { TimerEngine, TimerState } from "./timer-engine.js";
 import { Storage } from "./storage.js";
 import { AudioEngine, TTSEngine } from "./audio.js";
 import { WakeLock } from "./wake-lock.js";
+import { movePreset } from "./presets.js";
 
 const $ = id => document.getElementById(id), storage = new Storage(), data = storage.load();
 const engine = new TimerEngine(), audio = new AudioEngine(), tts = new TTSEngine(), wakeLock = new WakeLock();
@@ -13,9 +14,15 @@ const durationText = seconds => seconds < 60 ? `${seconds} s` : format(seconds);
 const parseDuration = value => { const bits = value.trim().split(":").map(Number); return bits.length === 2 ? bits[0] * 60 + bits[1] : Number(value); };
 
 function renderPresets() {
-  $("preset-list").innerHTML = data.presets.map(p => `<article class="preset-card">
+  $("preset-list").innerHTML = data.presets.map((p, index) => `<article class="preset-card">
     <button class="preset-start" data-action="start" data-id="${p.id}"><span class="play">▶</span><span><strong>${escapeHtml(p.name)}</strong><small>${durationText(p.work)} cvičení${p.rest ? ` • ${durationText(p.rest)} pauza` : " • bez pauzy"} • ${p.rounds} kol</small></span></button>
-    <div class="preset-actions"><button data-action="edit" data-id="${p.id}">Upravit</button><button data-action="duplicate" data-id="${p.id}">Duplikovat</button><button data-action="delete" data-id="${p.id}" class="delete">Smazat</button></div>
+    <div class="preset-actions">
+      <div class="move-actions" aria-label="Změnit pořadí">
+        <button data-action="up" data-id="${p.id}" aria-label="Posunout ${escapeHtml(p.name)} nahoru" title="Posunout nahoru" ${index === 0 ? "disabled" : ""}>↑</button>
+        <button data-action="down" data-id="${p.id}" aria-label="Posunout ${escapeHtml(p.name)} dolů" title="Posunout dolů" ${index === data.presets.length - 1 ? "disabled" : ""}>↓</button>
+      </div>
+      <button data-action="edit" data-id="${p.id}">Upravit</button><button data-action="duplicate" data-id="${p.id}">Duplikovat</button><button data-action="delete" data-id="${p.id}" class="delete">Smazat</button>
+    </div>
   </article>`).join("");
 }
 function escapeHtml(value) { const el = document.createElement("span"); el.textContent = value; return el.innerHTML; }
@@ -51,6 +58,8 @@ engine.addEventListener("WORKOUT_FINISHED", () => { if (uses("beep")) audio.fini
 
 $("preset-list").addEventListener("click", e => { const b=e.target.closest("button[data-action]"); if(!b)return; const p=data.presets.find(x=>x.id===b.dataset.id); if(!p)return;
   if(b.dataset.action==="start") startWorkout(p); if(b.dataset.action==="edit") openEditor(p);
+  if(b.dataset.action==="up" && movePreset(data.presets,p.id,-1)) persist();
+  if(b.dataset.action==="down" && movePreset(data.presets,p.id,1)) persist();
   if(b.dataset.action==="duplicate") { data.presets.push({...p,id:crypto.randomUUID(),name:`${p.name} – kopie`}); persist(); }
   if(b.dataset.action==="delete" && confirm(`Smazat „${p.name}“?`)) { data.presets=data.presets.filter(x=>x.id!==p.id); persist(); }
 });
