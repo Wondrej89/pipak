@@ -52,6 +52,7 @@ function renderTimer(s) {
 function uses(kind) { return activePreset?.audioMode === kind || activePreset?.audioMode === "both"; }
 engine.addEventListener("COUNTDOWN", () => { if (uses("beep")) audio.warning(); });
 engine.addEventListener("ROUND_STARTED", () => { if (uses("beep")) audio.start(); });
+engine.addEventListener("REST_STARTED", () => { if (uses("voice")) tts.speak("Pauza."); });
 engine.addEventListener("PHASE_ENDING", e => { if (uses("voice") && e.detail.seconds) tts.speak(e.detail.from === TimerState.PREPARING ? `Začínáme za ${e.detail.seconds}` : `Další kolo za ${e.detail.seconds}`); });
 engine.addEventListener("LAST_ROUND_UPCOMING", e => { if (uses("voice") && e.detail.seconds) tts.speak(`Poslední kolo za ${e.detail.seconds}`); });
 engine.addEventListener("WORKOUT_FINISHED", () => { if (uses("beep")) audio.finish(); if (uses("voice")) tts.speak("Hotovo."); wakeLock.release(); });
