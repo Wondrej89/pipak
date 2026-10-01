@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#111827"><meta name="description" content="Jednoduchý intervalový časovač pro cvičení">
+  <meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css"><title>Pípák – intervalový časovač</title>
+</head>
+<body>
+  <main id="setup" class="setup">
+    <header class="app-header"><div><p class="eyebrow">INTERVALOVÝ ČASOVAČ</p><h1>Pípák</h1></div><button id="new-preset" class="icon-button" aria-label="Nová předvolba">＋</button></header>
+    <section aria-labelledby="presets-title"><h2 id="presets-title">Moje tréninky</h2><div id="preset-list" class="preset-list"></div></section>
+  </main>
+
+  <section id="timer" class="timer hidden" aria-live="polite">
+    <div class="timer-top"><span id="phase-label" class="phase-label">START</span><span id="round-label" class="round-label">KOLO 1 / 10</span></div>
+    <div class="timer-main"><div id="time" class="time">00:10</div><div id="next-label" class="next-label">DALŠÍ: KOLO 1</div><div id="last-round" class="last-round hidden">POSLEDNÍ KOLO</div></div>
+    <div class="progress" role="progressbar" aria-label="Průběh aktuální fáze"><div id="progress-bar"></div></div>
+    <div class="timer-controls">
+      <button id="restart" class="control secondary" aria-label="Restartovat fázi">↺ <span>Znovu</span></button>
+      <button id="pause" class="control primary">Ⅱ <span>Pauza</span></button>
+      <button id="skip" class="control secondary" aria-label="Přeskočit fázi">↠ <span>Přeskočit</span></button>
+      <button id="stop" class="control danger">Podržet pro stop</button>
+    </div>
+  </section>
+
+  <dialog id="editor"><form id="preset-form" method="dialog">
+    <div class="dialog-head"><div><p class="eyebrow">PŘEDVOLBA</p><h2 id="editor-title">Nový trénink</h2></div><button type="button" class="close" aria-label="Zavřít">×</button></div>
+    <input id="preset-id" type="hidden"><label>Název<input id="name" required maxlength="40" placeholder="Můj trénink"></label>
+    <div class="form-grid">
+      <label>Cvičení <span>(min:s)</span><input id="work" required inputmode="numeric" placeholder="00:40"></label>
+      <label>Pauza <span>(min:s)</span><input id="rest" required inputmode="numeric" placeholder="00:20"></label>
+      <label>Počet kol<input id="rounds" required type="number" min="1" max="999"></label>
+      <label>Start za <span>(s)</span><input id="start-delay" required type="number" min="0" max="3600"></label>
+      <label>Upozornění <span>(s)</span><input id="warning" required type="number" min="0" max="3600"></label>
+      <label>Zvuk<select id="audio-mode"><option value="beep">Pípání</option><option value="voice">Hlas</option><option value="both">Pípání + hlas</option></select></label>
+    </div>
+    <label>Hlasitost<input id="volume" type="range" min="0" max="1" step="0.05"></label>
+    <div class="dialog-actions"><button type="button" class="button ghost close">Zrušit</button><button class="button save" value="save">Uložit</button></div>
+  </form></dialog>
+  <script type="module" src="src/app.js"></script>
+</body></html>

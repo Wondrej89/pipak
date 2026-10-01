@@ -1,0 +1,11 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+if (!globalThis.CustomEvent) globalThis.CustomEvent = class extends Event { constructor(type, options={}) { super(type); this.detail=options.detail; } };
+const { TimerEngine, TimerState, buildPhases } = await import("../src/timer-engine.js");
+const config={work:40,rest:20,rounds:3,startDelay:10,warning:10};
+test("builds a generic phase sequence",()=>assert.deepEqual(buildPhases(config).map(p=>p.type),["PREPARING","WORK","REST","WORK","REST","WORK"]));
+test("zero rest omits rest phases",()=>assert.deepEqual(buildPhases({...config,rest:0,startDelay:0}).map(p=>p.type),["WORK","WORK","WORK"]));
+test("uses wall time and crosses multiple phases after background",()=>{let now=1000;const timer=new TimerEngine(()=>now);timer.start(config);now+=76_000;const s=timer.update();assert.equal(s.state,TimerState.WORK);assert.equal(s.phase.round,2);assert.equal(s.remainingSeconds,34);});
+test("pause and resume preserve exact remaining time",()=>{let now=0;const timer=new TimerEngine(()=>now);timer.start(config);now=4250;timer.pause();assert.equal(timer.snapshot().remainingMs,5750);now=104250;timer.resume();now+=1000;assert.equal(timer.update().remainingMs,4750);});
+test("last round emits dedicated warning",()=>{let now=0;const timer=new TimerEngine(()=>now);const events=[];timer.addEventListener("LAST_ROUND_UPCOMING",e=>events.push(e.detail));timer.start({...config,startDelay:0,rounds:2});now=50_000;timer.update();assert.deepEqual(events,[{seconds:10,round:2,from:"REST"}]);});
+test("round counting finishes after the final work phase",()=>{let now=0;const timer=new TimerEngine(()=>now);timer.start({...config,startDelay:0,rounds:2});now=100_000;assert.equal(timer.update().state,TimerState.FINISHED);});
