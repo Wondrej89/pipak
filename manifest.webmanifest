@@ -1,0 +1,15 @@
+{
+  "name": "Pípák – intervalový časovač",
+  "short_name": "Pípák",
+  "description": "Jednoduchý intervalový časovač pro cvičení.",
+  "lang": "cs",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#08101e",
+  "theme_color": "#111827",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
