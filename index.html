@@ -13,6 +13,20 @@
     <section aria-labelledby="presets-title"><h2 id="presets-title">Moje tréninky</h2><div id="preset-list" class="preset-list"></div></section>
   </main>
 
+  <section id="preset-detail" class="preset-detail hidden" aria-labelledby="detail-name">
+    <button id="detail-back" class="detail-back" type="button">← <span>Zpět na tréninky</span></button>
+    <div class="detail-content">
+      <p class="eyebrow">VYBRANÝ TRÉNINK</p>
+      <h2 id="detail-name"></h2>
+      <div class="detail-stats" aria-label="Parametry tréninku">
+        <div class="detail-stat"><span>Počet kol</span><strong id="detail-rounds"></strong></div>
+        <div class="detail-stat"><span>Délka cvičení</span><strong id="detail-work"></strong></div>
+        <div class="detail-stat"><span>Přestávka</span><strong id="detail-rest"></strong></div>
+      </div>
+      <button id="detail-start" class="detail-start" type="button"><span class="detail-play" aria-hidden="true">▶</span><span>Spustit pípák</span></button>
+    </div>
+  </section>
+
   <section id="timer" class="timer hidden" aria-live="polite">
     <div class="timer-top"><span id="phase-label" class="phase-label">START</span><span id="round-label" class="round-label">KOLO 1 / 10</span></div>
     <div class="timer-main"><div id="time" class="time">00:10</div><div id="next-label" class="next-label">DALŠÍ: KOLO 1</div><div id="last-round" class="last-round hidden">POSLEDNÍ KOLO</div></div>
