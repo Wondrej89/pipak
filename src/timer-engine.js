@@ -15,13 +15,13 @@ export function buildPhases(config) {
 
 export class TimerEngine extends EventTarget {
   constructor(now = () => Date.now()) {
-    super(); this.now = now; this.reset();
+    super(); this.now = now; this.suppressEvents = false; this.reset();
   }
   reset() {
     this.config = null; this.phases = []; this.index = -1; this.state = TimerState.IDLE;
     this.endTime = 0; this.pausedRemaining = 0; this.previousState = null; this.announced = new Set();
   }
-  emit(type, detail = {}) { this.dispatchEvent(new CustomEvent(type, { detail })); }
+  emit(type, detail = {}) { if (!this.suppressEvents) this.dispatchEvent(new CustomEvent(type, { detail })); }
   start(config) {
     this.reset(); this.config = { ...config }; this.phases = buildPhases(config); this.index = 0;
     if (!this.phases.length) return this.finish();
@@ -93,6 +93,32 @@ export class TimerEngine extends EventTarget {
   }
   stop() { this.reset(); this.emit("STOPPED"); }
   finish() { this.state = TimerState.FINISHED; this.endTime = 0; this.emit("WORKOUT_FINISHED"); return this.snapshot(); }
+  exportState() {
+    return {
+      config: this.config ? { ...this.config } : null,
+      index: this.index,
+      state: this.state,
+      endTime: this.endTime,
+      pausedRemaining: this.pausedRemaining,
+      previousState: this.previousState,
+      announced: [...this.announced],
+    };
+  }
+  /** Restore wall-clock state and silently reconcile all time elapsed while unloaded. */
+  restoreState(savedState, now = Date.now()) {
+    const validStates = Object.values(TimerState);
+    if (!savedState?.config || !validStates.includes(savedState.state)) throw new TypeError("Invalid timer state");
+    const phases = buildPhases(savedState.config);
+    if (!Number.isInteger(savedState.index) || savedState.index < 0 || savedState.index >= phases.length) {
+      throw new RangeError("Invalid phase index");
+    }
+    this.config = { ...savedState.config }; this.phases = phases; this.index = savedState.index;
+    this.state = savedState.state; this.endTime = Number(savedState.endTime) || 0;
+    this.pausedRemaining = Math.max(0, Number(savedState.pausedRemaining) || 0);
+    this.previousState = savedState.previousState || null; this.announced = new Set(savedState.announced || []);
+    this.suppressEvents = true;
+    try { return this.update(now); } finally { this.suppressEvents = false; }
+  }
   snapshot(at = this.now()) {
     const phase = this.phases[this.index];
     let ms = 0;

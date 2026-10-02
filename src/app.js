@@ -43,10 +43,16 @@ function showPresetDetail(preset) {
   setup.classList.add("hidden"); timer.classList.add("hidden"); detail.classList.remove("hidden");
 }
 function showPresetList() { detail.classList.add("hidden"); timer.classList.add("hidden"); setup.classList.remove("hidden"); }
+function persistActiveWorkout() {
+  if (!activePreset || [TimerState.IDLE, TimerState.FINISHED].includes(engine.state)) return;
+  storage.saveActiveWorkout({ preset: { ...activePreset }, timer: engine.exportState(), savedAt: Date.now() });
+}
 function startWorkout(preset) {
   activePreset=preset; data.lastPresetId=preset.id; data.preferences.audioMode=preset.audioMode; storage.save(data);
-  workoutAudio.unlock(preset.audioMode, data.preferences.volume); setup.classList.add("hidden"); detail.classList.add("hidden"); timer.classList.remove("hidden");
-  timer.dataset.phase="PREPARING"; engine.start(preset); wakeLock.acquire(); backgroundMedia.start(); scheduler.start();
+  // Keep play() in the START click's user-activation call stack.
+  backgroundMedia.start(); workoutAudio.unlock(preset.audioMode, data.preferences.volume);
+  setup.classList.add("hidden"); detail.classList.add("hidden"); timer.classList.remove("hidden");
+  timer.dataset.phase="PREPARING"; engine.start(preset); persistActiveWorkout(); wakeLock.acquire(); scheduler.start();
 }
 function renderTimer(s) {
   $("phase-label").textContent=stateNames[s.state]; $("time").textContent=format(s.remainingSeconds);
@@ -61,7 +67,7 @@ function renderTimer(s) {
 const scheduler = new WorkoutScheduler(engine, renderTimer);
 const setPaused = paused => {
   if (paused) { engine.pause(); backgroundMedia.pause(); } else { engine.resume(); backgroundMedia.start(); }
-  scheduler.sync();
+  persistActiveWorkout(); scheduler.sync();
 };
 const backgroundMedia = new BackgroundMedia({
   onPlay: () => { if (engine.state === TimerState.PAUSED) setPaused(false); },
@@ -72,7 +78,8 @@ engine.addEventListener("ROUND_STARTED", () => workoutAudio.roundStarted());
 engine.addEventListener("REST_STARTED", () => workoutAudio.restStarted());
 engine.addEventListener("PHASE_ENDING", e => workoutAudio.phaseEnding(e.detail));
 engine.addEventListener("LAST_ROUND_UPCOMING", e => workoutAudio.lastRound(e.detail));
-engine.addEventListener("WORKOUT_FINISHED", () => { workoutAudio.finished(); backgroundMedia.stop(); scheduler.stop(); wakeLock.release(); });
+engine.addEventListener("PHASE_STARTED", persistActiveWorkout);
+engine.addEventListener("WORKOUT_FINISHED", () => { workoutAudio.finished(); backgroundMedia.stop(); scheduler.stop(); wakeLock.release(); storage.clearActiveWorkout(); });
 
 $("preset-list").addEventListener("click", e => { const b=e.target.closest("button[data-action]"); if(!b)return; const p=data.presets.find(x=>x.id===b.dataset.id); if(!p)return;
   if(b.dataset.action==="select") showPresetDetail(p); if(b.dataset.action==="edit") openEditor(p);
@@ -89,9 +96,36 @@ form.addEventListener("submit", e => { e.preventDefault(); const preset={id:$("p
   const i=data.presets.findIndex(p=>p.id===preset.id); if(i<0)data.presets.push(preset);else data.presets[i]=preset;
   data.preferences.volume=Number($("volume").value); persist(); dialog.close();
 });
-$("pause").addEventListener("click",()=>setPaused(engine.state!==TimerState.PAUSED)); $("restart").addEventListener("click",()=>{engine.restartPhase();scheduler.sync();}); $("skip").addEventListener("click",()=>{engine.nextPhase();scheduler.sync();});
-const stopStart=()=>{ holdTimer=setTimeout(()=>{ engine.stop(); scheduler.stop(); backgroundMedia.stop(); wakeLock.release(); workoutAudio.cancel(); showPresetDetail(activePreset); navigator.vibrate?.(50); },900); };
+$("pause").addEventListener("click",()=>setPaused(engine.state!==TimerState.PAUSED)); $("restart").addEventListener("click",()=>{engine.restartPhase();persistActiveWorkout();scheduler.sync();}); $("skip").addEventListener("click",()=>{engine.nextPhase();persistActiveWorkout();scheduler.sync();});
+const stopStart=()=>{ holdTimer=setTimeout(()=>{ engine.stop(); scheduler.stop(); backgroundMedia.stop(); wakeLock.release(); workoutAudio.cancel(); storage.clearActiveWorkout(); showPresetDetail(activePreset); navigator.vibrate?.(50); },900); };
 const stopCancel=()=>clearTimeout(holdTimer); $("stop").addEventListener("pointerdown",stopStart); ["pointerup","pointerleave","pointercancel"].forEach(n=>$("stop").addEventListener(n,stopCancel));
-document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible" && ![TimerState.IDLE,TimerState.FINISHED].includes(engine.state)) wakeLock.acquire(); });
-window.addEventListener("pagehide",()=>wakeLock.release());
-renderPresets(); if("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js");
+document.addEventListener("visibilitychange",()=>{
+  console.debug("[Pípák] visibilitychange", document.visibilityState);
+  if (document.visibilityState === "hidden") persistActiveWorkout();
+  else if (![TimerState.IDLE,TimerState.FINISHED].includes(engine.state)) { scheduler.sync(); wakeLock.acquire(); }
+});
+document.addEventListener("freeze",()=>{ console.debug("[Pípák] freeze"); persistActiveWorkout(); });
+document.addEventListener("resume",()=>{ console.debug("[Pípák] resume"); scheduler.sync(); });
+window.addEventListener("pagehide",()=>{ console.debug("[Pípák] pagehide"); persistActiveWorkout(); wakeLock.release(); });
+window.addEventListener("pageshow",()=>{ console.debug("[Pípák] pageshow"); scheduler.sync(); });
+
+function restoreActiveWorkout() {
+  const saved = storage.loadActiveWorkout();
+  if (!saved?.preset || !saved?.timer) return false;
+  try {
+    activePreset = saved.preset;
+    const snapshot = engine.restoreState(saved.timer, Date.now());
+    console.debug("[Pípák] restore active workout", { savedAt: saved.savedAt, state: snapshot.state, index: snapshot.index });
+    setup.classList.add("hidden"); detail.classList.add("hidden"); timer.classList.remove("hidden");
+    renderTimer(snapshot);
+    if (snapshot.state === TimerState.FINISHED) { storage.clearActiveWorkout(); return true; }
+    persistActiveWorkout(); scheduler.start();
+    if (snapshot.state !== TimerState.PAUSED) backgroundMedia.start();
+    if (document.visibilityState === "visible") wakeLock.acquire();
+    return true;
+  } catch (error) {
+    console.debug("[Pípák] invalid active workout", error); storage.clearActiveWorkout(); return false;
+  }
+}
+
+renderPresets(); restoreActiveWorkout(); if("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js");
