@@ -1,13 +1,15 @@
 import { TimerEngine, TimerState } from "./timer-engine.js";
 import { Storage } from "./storage.js";
-import { AudioEngine, TTSEngine } from "./audio.js";
+import { WorkoutAudio } from "./audio.js";
 import { WakeLock } from "./wake-lock.js";
 import { movePreset } from "./presets.js";
+import { WorkoutScheduler } from "./workout-scheduler.js";
+import { BackgroundMedia } from "./background-media.js";
 
 const $ = id => document.getElementById(id), storage = new Storage(), data = storage.load();
-const engine = new TimerEngine(), audio = new AudioEngine(), tts = new TTSEngine(), wakeLock = new WakeLock();
+const engine = new TimerEngine(), workoutAudio = new WorkoutAudio(), wakeLock = new WakeLock();
 const setup = $("setup"), detail = $("preset-detail"), timer = $("timer"), dialog = $("editor"), form = $("preset-form");
-let frame, activePreset, selectedPreset, holdTimer;
+let activePreset, selectedPreset, holdTimer;
 const stateNames = { PREPARING: "START", WORK: "CVIČENÍ", REST: "PAUZA", PAUSED: "POZASTAVENO", FINISHED: "HOTOVO" };
 const format = seconds => `${String(Math.floor(seconds / 60)).padStart(2,"0")}:${String(seconds % 60).padStart(2,"0")}`;
 const durationText = seconds => seconds < 60 ? `${seconds} s` : format(seconds);
@@ -43,10 +45,9 @@ function showPresetDetail(preset) {
 function showPresetList() { detail.classList.add("hidden"); timer.classList.add("hidden"); setup.classList.remove("hidden"); }
 function startWorkout(preset) {
   activePreset=preset; data.lastPresetId=preset.id; data.preferences.audioMode=preset.audioMode; storage.save(data);
-  audio.unlock(data.preferences.volume); tts.unlock(); setup.classList.add("hidden"); detail.classList.add("hidden"); timer.classList.remove("hidden");
-  timer.dataset.phase="PREPARING"; engine.start(preset); wakeLock.acquire(); cancelAnimationFrame(frame); tick();
+  workoutAudio.unlock(preset.audioMode, data.preferences.volume); setup.classList.add("hidden"); detail.classList.add("hidden"); timer.classList.remove("hidden");
+  timer.dataset.phase="PREPARING"; engine.start(preset); wakeLock.acquire(); backgroundMedia.start(); scheduler.start();
 }
-function tick() { renderTimer(engine.update()); if (![TimerState.IDLE,TimerState.FINISHED].includes(engine.state)) frame=requestAnimationFrame(tick); }
 function renderTimer(s) {
   $("phase-label").textContent=stateNames[s.state]; $("time").textContent=format(s.remainingSeconds);
   $("round-label").textContent=s.state === TimerState.FINISHED ? `${activePreset.name}` : `KOLO ${s.phase?.round || 1} / ${activePreset.rounds}`;
@@ -55,14 +56,23 @@ function renderTimer(s) {
   $("last-round").classList.toggle("hidden", !isLast); $("progress-bar").style.width=`${s.progress*100}%`;
   $("pause").innerHTML=s.state===TimerState.PAUSED ? "▶ <span>Pokračovat</span>" : "Ⅱ <span>Pauza</span>";
   timer.dataset.phase=s.state===TimerState.PAUSED ? s.phase?.type : s.state;
+  if (activePreset) backgroundMedia.update(activePreset, s, stateNames[s.state]);
 }
-function uses(kind) { return activePreset?.audioMode === kind || activePreset?.audioMode === "both"; }
-engine.addEventListener("COUNTDOWN", () => { if (uses("beep")) audio.warning(); });
-engine.addEventListener("ROUND_STARTED", () => { if (uses("beep")) audio.start(); });
-engine.addEventListener("REST_STARTED", () => { if (uses("voice")) tts.speak("Pauza."); });
-engine.addEventListener("PHASE_ENDING", e => { if (uses("voice") && e.detail.seconds) tts.speak(e.detail.from === TimerState.PREPARING ? `Začínáme za ${e.detail.seconds}` : `Další kolo za ${e.detail.seconds}`); });
-engine.addEventListener("LAST_ROUND_UPCOMING", e => { if (uses("voice") && e.detail.seconds) tts.speak(`Poslední kolo za ${e.detail.seconds}`); });
-engine.addEventListener("WORKOUT_FINISHED", () => { if (uses("beep")) audio.finish(); if (uses("voice")) tts.speak("Hotovo."); wakeLock.release(); });
+const scheduler = new WorkoutScheduler(engine, renderTimer);
+const setPaused = paused => {
+  if (paused) { engine.pause(); backgroundMedia.pause(); } else { engine.resume(); backgroundMedia.start(); }
+  scheduler.sync();
+};
+const backgroundMedia = new BackgroundMedia({
+  onPlay: () => { if (engine.state === TimerState.PAUSED) setPaused(false); },
+  onPause: () => { if (![TimerState.IDLE, TimerState.PAUSED, TimerState.FINISHED].includes(engine.state)) setPaused(true); },
+});
+engine.addEventListener("COUNTDOWN", () => workoutAudio.warning());
+engine.addEventListener("ROUND_STARTED", () => workoutAudio.roundStarted());
+engine.addEventListener("REST_STARTED", () => workoutAudio.restStarted());
+engine.addEventListener("PHASE_ENDING", e => workoutAudio.phaseEnding(e.detail));
+engine.addEventListener("LAST_ROUND_UPCOMING", e => workoutAudio.lastRound(e.detail));
+engine.addEventListener("WORKOUT_FINISHED", () => { workoutAudio.finished(); backgroundMedia.stop(); scheduler.stop(); wakeLock.release(); });
 
 $("preset-list").addEventListener("click", e => { const b=e.target.closest("button[data-action]"); if(!b)return; const p=data.presets.find(x=>x.id===b.dataset.id); if(!p)return;
   if(b.dataset.action==="select") showPresetDetail(p); if(b.dataset.action==="edit") openEditor(p);
@@ -79,9 +89,9 @@ form.addEventListener("submit", e => { e.preventDefault(); const preset={id:$("p
   const i=data.presets.findIndex(p=>p.id===preset.id); if(i<0)data.presets.push(preset);else data.presets[i]=preset;
   data.preferences.volume=Number($("volume").value); persist(); dialog.close();
 });
-$("pause").addEventListener("click",()=>engine.state===TimerState.PAUSED?engine.resume():engine.pause()); $("restart").addEventListener("click",()=>engine.restartPhase()); $("skip").addEventListener("click",()=>engine.nextPhase());
-const stopStart=()=>{ holdTimer=setTimeout(()=>{ engine.stop(); wakeLock.release(); tts.cancel(); showPresetDetail(activePreset); cancelAnimationFrame(frame); navigator.vibrate?.(50); },900); };
+$("pause").addEventListener("click",()=>setPaused(engine.state!==TimerState.PAUSED)); $("restart").addEventListener("click",()=>{engine.restartPhase();scheduler.sync();}); $("skip").addEventListener("click",()=>{engine.nextPhase();scheduler.sync();});
+const stopStart=()=>{ holdTimer=setTimeout(()=>{ engine.stop(); scheduler.stop(); backgroundMedia.stop(); wakeLock.release(); workoutAudio.cancel(); showPresetDetail(activePreset); navigator.vibrate?.(50); },900); };
 const stopCancel=()=>clearTimeout(holdTimer); $("stop").addEventListener("pointerdown",stopStart); ["pointerup","pointerleave","pointercancel"].forEach(n=>$("stop").addEventListener(n,stopCancel));
-document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible" && ![TimerState.IDLE,TimerState.FINISHED].includes(engine.state)){engine.update();wakeLock.acquire();} });
+document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible" && ![TimerState.IDLE,TimerState.FINISHED].includes(engine.state)) wakeLock.acquire(); });
 window.addEventListener("pagehide",()=>wakeLock.release());
 renderPresets(); if("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js");
