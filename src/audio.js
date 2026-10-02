@@ -30,3 +30,17 @@ export class TTSEngine {
   }
   cancel() { if (this.enabled) window.speechSynthesis.cancel(); }
 }
+
+/** Single workout-audio boundary, ready for prerecorded cues in a future backend. */
+export class WorkoutAudio {
+  constructor(beeps = new AudioEngine(), voice = new TTSEngine()) { this.beeps = beeps; this.voice = voice; this.mode = "both"; }
+  unlock(mode, volume) { this.mode = mode; this.beeps.unlock(volume); this.voice.unlock(); }
+  uses(kind) { return this.mode === kind || this.mode === "both"; }
+  warning() { if (this.uses("beep")) this.beeps.warning(); }
+  roundStarted() { if (this.uses("beep")) this.beeps.start(); }
+  restStarted() { if (this.uses("voice")) this.voice.speak("Pauza."); }
+  phaseEnding({ seconds, from }) { if (this.uses("voice") && seconds) this.voice.speak(from === "PREPARING" ? `Začínáme za ${seconds}` : `Další kolo za ${seconds}`); }
+  lastRound({ seconds }) { if (this.uses("voice") && seconds) this.voice.speak(`Poslední kolo za ${seconds}`); }
+  finished() { if (this.uses("beep")) this.beeps.finish(); if (this.uses("voice")) this.voice.speak("Hotovo."); }
+  cancel() { this.voice.cancel(); }
+}

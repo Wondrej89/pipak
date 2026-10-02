@@ -44,6 +44,21 @@ export class TimerEngine extends EventTarget {
     if (this.state !== TimerState.FINISHED) this.checkEnding(at);
     return this.snapshot(at);
   }
+  /** Absolute wall-clock time of the next event which can affect workout logic. */
+  nextEventTime(at = this.now()) {
+    if (![TimerState.PREPARING, TimerState.WORK, TimerState.REST].includes(this.state)) return null;
+    const next = this.phases[this.index + 1];
+    const times = [this.endTime];
+    if (next?.type === TimerState.WORK) {
+      const addThreshold = (key, seconds) => {
+        const time = this.endTime - seconds * 1000;
+        if (!this.announced.has(key) && time > at && time < this.endTime) times.push(time);
+      };
+      if (this.config.warning > 0) addThreshold("warning", this.config.warning);
+      for (const seconds of [3, 2, 1]) addThreshold(`count-${seconds}`, seconds);
+    }
+    return Math.min(...times);
+  }
   checkEnding(at) {
     const remaining = Math.max(0, Math.ceil((this.endTime - at) / 1000));
     const phase = this.phases[this.index];
