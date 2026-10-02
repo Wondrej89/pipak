@@ -1,4 +1,4 @@
-const CACHE="pipak-v4";
+const CACHE="pipak-v5";
 const SHELL=["./","./index.html","./styles.css","./manifest.webmanifest","./icons/icon.svg","./src/app.js","./src/presets.js","./src/timer-engine.js","./src/storage.js","./src/audio.js","./src/background-media.js","./src/workout-scheduler.js","./src/wake-lock.js"];
 self.addEventListener("install",event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL)).then(()=>self.skipWaiting())));
 self.addEventListener("activate",event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
